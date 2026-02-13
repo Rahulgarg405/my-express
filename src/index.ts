@@ -1,10 +1,17 @@
 import http from "http";
 
-type Handler = (req : http.IncomingMessage, res : http.ServerResponse) => void;
+type NextFunction = () => void;
+type Handler = (req : http.IncomingMessage, res : http.ServerResponse, next: NextFunction) => void;
 
 class MyExpress {
+    // Array to store global middlewares
+    private middlewares: Handler[] = [];
     // Dictionary where Key is METHOD:PATH and value is Handler function
     private routes : {[key: string] : Handler} = {};
+
+    use(middleware: Handler) {
+        this.middlewares.push(middleware);
+    }
 
     get(path: string, handler: Handler){
         this.routes[`GET:${path}`] = handler;
@@ -14,18 +21,40 @@ class MyExpress {
         this.routes[`POST:${path}`] = handler;
     }
 
+    // The logic that executes the chain of functions
+    private runChain(req: http.IncomingMessage, res: http.ServerResponse, chain: Handler[]) {
+        let index = 0;
+        const next: NextFunction = () => {
+            // If we have more functions in the chain, run the next one
+            if(index < chain.length){
+                const currentMiddleware = chain[index];
+                index++;
+                currentMiddleware(req, res, next);
+            }
+        }
+
+        // start the chain
+        next();
+    }
+
     handle(req : http.IncomingMessage, res : http.ServerResponse) {
         const {method, url} = req;
         const key = `${method}:${url}`;
+        const routeHandler = this.routes[key];
 
-        const handler = this.routes[key];
-        if(handler){
-            handler(req, res);
+        const chain = [...this.middlewares];
+
+        if(routeHandler){
+            chain.push(routeHandler);
         }
         else{
-            res.writeHead(404);
-            res.end(`Cannot ${method} ${url}`);
+            chain.push((req, res) => {
+                res.writeHead(404);
+                res.end(`Cannot ${method} ${url}`);
+            });
         }
+
+        this.runChain(req, res, chain);
     }
 
     listen(port: number, cb: () => void) {
@@ -34,16 +63,28 @@ class MyExpress {
     }
 }
 
-const app  = new MyExpress();
+const app = new MyExpress();
 
-app.get('/', (req, res) => {
-    res.end('Welcome to Home Page!!!');
+// Global Logger Middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next(); 
 });
 
-app.get('/about', (req, res) => {
-    res.end('Welcome to About Page!!!');
+// A dummy "Auth" Middleware
+app.use((req, res, next) => {
+  const isAdmin = true; 
+  if (isAdmin) {
+    next();
+  } else {
+    res.end('Access Denied!');
+  }
+});
+
+app.get('/', (req, res) => {
+  res.end('Success! You reached the home page.');
 });
 
 app.listen(3000, () => {
-    console.log('Router is Active!!!');
+  console.log('Middleware engine is live on http://localhost:3000');
 });
