@@ -1,4 +1,5 @@
 import http from "http";
+import {URL} from "url";
 
 type NextFunction = () => void;
 type Handler = (
@@ -71,10 +72,22 @@ class MyExpress {
 
   async handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
+    const baseURL = `http://${req.headers.host}`;
+    const parsedURL = new URL(req.url || '', baseURL);
+
+    const query: {[key: string]: string} = {};
+
+    parsedURL.searchParams.forEach((value: string, key: string) => {
+      query[key] = value;
+    });
+
+    (req as any).query = query;
+
     (req as any).body = await this.parseBody(req);
 
-    const { method, url } = req;
-    const key = `${method}:${url}`;
+    const { method } = req;
+    const pathname = parsedURL.pathname;
+    const key = `${method}:${pathname}`;
     const routeHandler = this.routes[key];
 
     const chain = [...this.middlewares];
@@ -84,7 +97,7 @@ class MyExpress {
     } else {
       chain.push((req, res) => {
         res.writeHead(404);
-        res.end(`Cannot ${method} ${url}`);
+        res.end(`Cannot ${method} ${pathname}`);
       });
     }
 
@@ -119,6 +132,11 @@ app.get("/", (req, res) => {
   res.end("Success! You reached the home page.");
 });
 
+app.get('/search', (req: any, res) => {
+  const searchTerm = req.query.q;
+  res.end(`You are searching for: ${searchTerm}`);
+});
+
 app.post('/login', (req: any, res) => {
   const { username, password } = req.body;
   console.log(`Login attempt for: ${username}`);
@@ -126,5 +144,5 @@ app.post('/login', (req: any, res) => {
 });
 
 app.listen(3000, () => {
-  console.log("Middleware engine is live on http://localhost:3000");
+  console.log("Server is live on http://localhost:3000");
 });
